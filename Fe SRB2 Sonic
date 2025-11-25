@@ -1,0 +1,546 @@
+--!strict
+---------------------------------------------------------------------
+-- FULL SRB2 SONIC SYSTEM + TAUNT + CUSTOM IDLE (RESPAWN SAFE)
+---------------------------------------------------------------------
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+---------------------------------------------------------------------
+-- CONFIG KEYS
+---------------------------------------------------------------------
+local DASH_KEY = Enum.KeyCode.E
+local THOK_KEY = Enum.KeyCode.Q
+local TAUNT_KEY = Enum.KeyCode.T
+
+---------------------------------------------------------------------
+-- MOBILE BUTTONS
+---------------------------------------------------------------------
+local spinButton, thokButton: TextButton?
+local tauntButton: TextButton?
+
+local function createMobileButtons()
+    local spinGui = Instance.new("ScreenGui")
+    spinGui.Name = "SpinGUI"
+    spinGui.ResetOnSpawn = false
+    spinGui.Parent = player:WaitForChild("PlayerGui")
+
+    local spinBtn = Instance.new("TextButton")
+    spinBtn.Size = UDim2.new(0, 80, 0, 80)
+    spinBtn.Position = UDim2.new(0.75, 0, 0.75, 0)
+    spinBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+    spinBtn.Text = "Spin"
+    spinBtn.BackgroundTransparency = 0.4
+    spinBtn.TextScaled = true
+    spinBtn.Parent = spinGui
+
+    local thokGui = Instance.new("ScreenGui")
+    thokGui.Name = "ThokGUI"
+    thokGui.ResetOnSpawn = false
+    thokGui.Parent = player:WaitForChild("PlayerGui")
+
+    local thokBtn = Instance.new("TextButton")
+    thokBtn.Size = UDim2.new(0, 85, 0, 85)
+    thokBtn.AnchorPoint = Vector2.new(1, 1)
+    thokBtn.Position = UDim2.new(1, -120, 1, -140)
+    thokBtn.Text = "THOK"
+    thokBtn.TextScaled = true
+    thokBtn.BackgroundTransparency = 0.25
+    thokBtn.Visible = false
+    thokBtn.Parent = thokGui
+
+    local tauntGui = Instance.new("ScreenGui")
+    tauntGui.Name = "TauntGUI"
+    tauntGui.ResetOnSpawn = false
+    tauntGui.Parent = player:WaitForChild("PlayerGui")
+
+    local tauntBtn = Instance.new("TextButton")
+    tauntBtn.Size = UDim2.new(0, 40, 0, 40)
+    tauntBtn.Position = UDim2.new(0.9, 0, 0.6, 0)
+    tauntBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+    tauntBtn.Text = "Taunt"
+    tauntBtn.TextScaled = true
+    tauntBtn.BackgroundTransparency = 0.5
+    tauntBtn.Parent = tauntGui
+
+    return spinBtn, thokBtn, tauntBtn
+end
+
+spinButton, thokButton, tauntButton = createMobileButtons()
+
+---------------------------------------------------------------------
+-- CAMERA CONFIG
+---------------------------------------------------------------------
+local CAMERA_DISTANCE = 16
+local CAMERA_HEIGHT = 3
+local FORWARD_OFFSET = 2
+local ROTATION_LAG = 0.12
+local FOLLOW_LAG = 0.2
+local ROTATION_SPEED = 1.5
+local SPEED_ZOOM_MULTIPLIER = 0
+
+local cameraCFrame = CFrame.new()
+local targetYaw = 0
+local smoothYaw = 0
+local humanoidRoot: BasePart?
+local isMobile = UserInputService.TouchEnabled
+local cameraTouch: InputObject?
+local cameraEnabled = false
+
+local function createCameraPrompt()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "CameraPrompt"
+    gui.ResetOnSpawn = false
+    gui.Parent = player:WaitForChild("PlayerGui")
+
+    local header = Instance.new("TextLabel")
+    header.Size = UDim2.new(0, 400, 0, 60)
+    header.Position = UDim2.new(0.5, 0, 0.3, 0)
+    header.AnchorPoint = Vector2.new(0.5, 0.5)
+    header.Text = "Activate SRB2 Sonic-style Camera?"
+    header.TextScaled = true
+    header.BackgroundTransparency = 0.5
+    header.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    header.TextColor3 = Color3.fromRGB(255, 255, 255)
+    header.Parent = gui
+
+    local yesBtn = Instance.new("TextButton")
+    yesBtn.Size = UDim2.new(0, 150, 0, 60)
+    yesBtn.Position = UDim2.new(0.3, 0, 0.5, 0)
+    yesBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+    yesBtn.Text = "Yes"
+    yesBtn.TextScaled = true
+    yesBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    yesBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    yesBtn.Parent = gui
+
+    local noBtn = Instance.new("TextButton")
+    noBtn.Size = UDim2.new(0, 150, 0, 60)
+    noBtn.Position = UDim2.new(0.7, 0, 0.5, 0)
+    noBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+    noBtn.Text = "No"
+    noBtn.TextScaled = true
+    noBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    noBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    noBtn.Parent = gui
+
+    return gui, yesBtn, noBtn
+end
+
+local function setupCameraInput()
+    if not humanoidRoot then return end
+    if not isMobile then
+        UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                targetYaw -= input.Delta.X * ROTATION_SPEED
+            end
+        end)
+    else
+        UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch and input.Position.X > camera.ViewportSize.X * 0.5 then
+                cameraTouch = input
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if input == cameraTouch then
+                targetYaw -= input.Delta.X * ROTATION_SPEED * 0.7
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input == cameraTouch then
+                cameraTouch = nil
+            end
+        end)
+    end
+end
+
+local function setupCameraCharacter(char)
+    humanoidRoot = char:WaitForChild("HumanoidRootPart")
+    smoothYaw = 0
+    targetYaw = 0
+end
+
+local function startCameraLoop()
+    RunService.RenderStepped:Connect(function()
+        if not humanoidRoot or not cameraEnabled then return end
+        local root = humanoidRoot
+        local speed = root.Velocity.Magnitude
+        smoothYaw = smoothYaw + (targetYaw - smoothYaw) * ROTATION_LAG
+
+        local offsetDistance = CAMERA_DISTANCE + speed * SPEED_ZOOM_MULTIPLIER
+        local backOffset = Vector3.new(0, CAMERA_HEIGHT, -offsetDistance + FORWARD_OFFSET)
+        local camOffset = CFrame.Angles(0, math.rad(smoothYaw), 0) * CFrame.new(backOffset)
+        local targetPos = root.Position + camOffset.Position
+        local lookTarget = root.Position + Vector3.new(0, 2, 0)
+
+        cameraCFrame = cameraCFrame:Lerp(CFrame.lookAt(targetPos, lookTarget), FOLLOW_LAG)
+        camera.CFrame = cameraCFrame
+    end)
+end
+
+---------------------------------------------------------------------
+-- CHARACTER MECHANICS
+---------------------------------------------------------------------
+local function setupCharacter(char: Model)
+    local humanoid = char:WaitForChild("Humanoid")
+    local root = char:WaitForChild("HumanoidRootPart")
+
+    -- Ensure Animator exists
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = humanoid
+    end
+
+    -- SRB2 Movement & Animations
+    local MIN_SPEED, MAX_SPEED = 1, 126
+    local ACCELERATION, DECELERATION = 0.5, 8
+    local RUN_THRESHOLD = 35
+    local DRIFT_MULTIPLIER, DRIFT_DECAY, MIN_DRIFT_VELOCITY = 0.85, 0.86, 2
+    local DASH_SPEED, CHARGE_TIME, DASH_DECEL, MIN_DASH_VEL = 300, 1.5, 0.97, 50
+
+    local isWalkPlaying, isRunPlaying, isIdlePlaying = false, false, false
+    local driftActive = false
+    local driftVel = Vector3.new()
+    local wasMoving = false
+    local isCharging, isDashing = false, false
+    local chargeStart = 0
+    local currentVelocity = Vector3.new()
+    local currentSpeed = MIN_SPEED
+    local lastBrakeTime = 0
+    local BRAKE_COOLDOWN = 0.6
+
+    -- Animations
+    local function createTrack(animId: string, priority: Enum.AnimationPriority, looped: boolean)
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://"..animId
+        local track = animator:LoadAnimation(anim)
+        track.Priority = priority
+        track.Looped = looped
+        return track
+    end
+
+    local walkTrack = createTrack("4211223236", Enum.AnimationPriority.Movement, true)
+    local runTrack = createTrack("85752365414182", Enum.AnimationPriority.Movement, true)
+    local idleTrack = createTrack("656118341", Enum.AnimationPriority.Idle, true)
+    local chargeTrack = createTrack("119889021060156", Enum.AnimationPriority.Action, true)
+    local releaseTrack = createTrack("119889021060156", Enum.AnimationPriority.Action, false)
+
+    -- Sounds
+    local brakeSound = Instance.new("Sound", root)
+    brakeSound.SoundId = "rbxassetid://138935700510140"
+    local chargeSound = Instance.new("Sound", root)
+    chargeSound.SoundId = "rbxassetid://6606602837"
+    local releaseSound = Instance.new("Sound", root)
+    releaseSound.SoundId = "rbxassetid://88921486254759"
+
+    -- SPIN DASH
+    local function startCharge()
+        if isCharging or isDashing or humanoid.FloorMaterial == Enum.Material.Air then return end
+        isCharging = true
+        chargeStart = tick()
+        humanoid.WalkSpeed = 0.1
+        chargeTrack:Play()
+        chargeTrack:AdjustSpeed(15)
+        chargeSound:Play()
+    end
+
+    local function releaseDash()
+        if not isCharging then return end
+        isCharging = false
+        if chargeTrack.IsPlaying then chargeTrack:Stop() end
+        isDashing = true
+        local chargeTime = math.min(tick() - chargeStart, CHARGE_TIME)
+        local power = chargeTime / CHARGE_TIME
+        currentVelocity = root.CFrame.LookVector * (DASH_SPEED * power)
+        releaseTrack:Play()
+        releaseSound:Play()
+    end
+
+    spinButton.MouseButton1Down:Connect(startCharge)
+    spinButton.MouseButton1Up:Connect(releaseDash)
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == DASH_KEY then startCharge() end
+    end)
+    UserInputService.InputEnded:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == DASH_KEY then releaseDash() end
+    end)
+
+    -- THOK
+    local THOK_SPEED, BURST_MULTIPLIER, BURST_DURATION = 50, 10, 0.5
+    local canThok = false
+
+    local thokAnim = Instance.new("Animation")
+    thokAnim.AnimationId = "rbxassetid://119889021060156"
+    local thokTrack = animator:LoadAnimation(thokAnim)
+    thokTrack.Priority = Enum.AnimationPriority.Action
+    thokTrack.Looped = true
+
+    local thokSound = Instance.new("Sound", root)
+    thokSound.SoundId = "rbxassetid://88921486254759"
+
+    local function performThok()
+        if not canThok then return end
+        canThok = false
+        local dir = root.CFrame.LookVector
+        root.Velocity = dir * THOK_SPEED * BURST_MULTIPLIER
+        task.spawn(function()
+            local start = tick()
+            while tick() - start < BURST_DURATION do
+                root.Velocity = root.Velocity:Lerp(dir * THOK_SPEED, (tick() - start)/BURST_DURATION)
+                RunService.RenderStepped:Wait()
+            end
+            root.Velocity = dir * THOK_SPEED
+        end)
+        if not thokTrack.IsPlaying then
+            thokTrack:Play()
+            thokTrack:AdjustSpeed(5)
+        end
+        thokSound:Play()
+    end
+
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == THOK_KEY then performThok() end
+    end)
+    thokButton.MouseButton1Click:Connect(performThok)
+
+    humanoid.StateChanged:Connect(function(_, new)
+        if new == Enum.HumanoidStateType.Jumping or new == Enum.HumanoidStateType.Freefall then
+            canThok = true
+            thokButton.Visible = true
+        else
+            canThok = false
+            thokButton.Visible = false
+            if thokTrack.IsPlaying then thokTrack:Stop() end
+        end
+    end)
+
+    -- WALK/RUN/DRIFT LOOP
+    RunService.RenderStepped:Connect(function(dt)
+        local moving = humanoid.MoveDirection.Magnitude > 0
+        if isCharging then
+            humanoid.WalkSpeed = 0.1
+        elseif isDashing then
+            local velY = root.Velocity.Y
+            root.Velocity = Vector3.new(currentVelocity.X, velY, currentVelocity.Z)
+            currentVelocity *= DASH_DECEL
+            humanoid.WalkSpeed = math.clamp(currentVelocity.Magnitude, MIN_SPEED, MAX_SPEED)
+            if currentVelocity.Magnitude < MIN_DASH_VEL then
+                isDashing = false
+                humanoid.WalkSpeed = MIN_SPEED
+            end
+        else
+            if moving then
+                currentSpeed = math.min(currentSpeed + ACCELERATION, MAX_SPEED)
+            else
+                currentSpeed = math.max(currentSpeed - DECELERATION, MIN_SPEED)
+            end
+            humanoid.WalkSpeed = currentSpeed
+        end
+
+        if wasMoving and not moving and currentSpeed >= MIN_SPEED and not isCharging and not isDashing then
+            local prevSpeedEstimate = currentSpeed + DECELERATION * dt
+            if prevSpeedEstimate >= RUN_THRESHOLD then
+                driftVel = root.CFrame.LookVector * (prevSpeedEstimate * DRIFT_MULTIPLIER)
+                driftActive = true
+                if tick() - lastBrakeTime >= BRAKE_COOLDOWN then
+                    lastBrakeTime = tick()
+                    pcall(function() brakeSound:Play() end)
+                    if not isIdlePlaying then idleTrack:Play() isIdlePlaying = true end
+                end
+            end
+        end
+
+        if driftActive then
+            local currentY = root.AssemblyLinearVelocity.Y
+            root.AssemblyLinearVelocity = Vector3.new(driftVel.X, currentY, driftVel.Z)
+            driftVel *= DRIFT_DECAY
+            if Vector3.new(driftVel.X,0,driftVel.Z).Magnitude <= MIN_DRIFT_VELOCITY then
+                driftActive = false
+                if isIdlePlaying then idleTrack:Stop() isIdlePlaying = false end
+            end
+        end
+
+        -- WALK/RUN ANIMATIONS
+        if not isCharging and not isDashing then
+            if moving then
+                if isIdlePlaying then idleTrack:Stop() isIdlePlaying = false end
+                if currentSpeed < RUN_THRESHOLD then
+                    if not isWalkPlaying then walkTrack:Play() isWalkPlaying = true end
+                    if isRunPlaying then runTrack:Stop() isRunPlaying = false end
+                    walkTrack:AdjustSpeed(0.8 + (currentSpeed - MIN_SPEED)/(RUN_THRESHOLD-MIN_SPEED)*1.4)
+                else
+                    if not isRunPlaying then runTrack:Play() isRunPlaying = true end
+                    if isWalkPlaying then walkTrack:Stop() isWalkPlaying = false end
+                    runTrack:AdjustSpeed(0.7 + ((currentSpeed-RUN_THRESHOLD)/(MAX_SPEED-RUN_THRESHOLD))*2)
+                end
+            else
+                if isWalkPlaying then walkTrack:Stop() isWalkPlaying = false end
+                if isRunPlaying then runTrack:Stop() isRunPlaying = false end
+            end
+        end
+        wasMoving = moving
+    end)
+
+    -- JUMP
+    humanoid.JumpPower = 23
+    Workspace.Gravity = 40
+
+    local jumpAnim = Instance.new("Animation")
+    jumpAnim.AnimationId = "rbxassetid://119889021060156"
+    local jumpTrack = animator:LoadAnimation(jumpAnim)
+    jumpTrack.Priority = Enum.AnimationPriority.Action
+
+    local jumpSound = Instance.new("Sound")
+    jumpSound.SoundId = "rbxassetid://8620459552"
+    jumpSound.Volume = 1
+    jumpSound.Parent = root
+
+    humanoid.Jumping:Connect(function(active)
+        if active then
+            jumpTrack:Play()
+            jumpSound:Play()
+        end
+    end)
+    humanoid.StateChanged:Connect(function(_, newState)
+        if newState == Enum.HumanoidStateType.Landed
+        or newState == Enum.HumanoidStateType.Running
+        or newState == Enum.HumanoidStateType.RunningNoPhysics
+        or newState == Enum.HumanoidStateType.Walking then
+            if jumpTrack.IsPlaying then jumpTrack:Stop() end
+        end
+    end)
+
+    -----------------------------------------------------------------
+    -- TAUNT
+    -----------------------------------------------------------------
+    local TAUNT_LIST = {
+        "rbxassetid://75752382380063",
+        "rbxassetid://131991078572593"
+    }
+    local tauntIndex = 1
+    local currentTrack: AnimationTrack?
+    local tauntPlaying = false
+    local movementConnection: RBXScriptConnection?
+
+    local function loadAnimation(animId: string)
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        local track = animator:LoadAnimation(anim)
+        track.Priority = Enum.AnimationPriority.Action
+        track.Looped = true
+        return track
+    end
+
+    local function playTaunt()
+        if currentTrack then currentTrack:Stop() end
+        tauntPlaying = true
+        local animId = TAUNT_LIST[tauntIndex]
+        tauntIndex += 1
+        if tauntIndex > #TAUNT_LIST then tauntIndex = 1 end
+        currentTrack = loadAnimation(animId)
+        task.defer(function()
+            if currentTrack then currentTrack:Play() end
+        end)
+    end
+
+    local function monitorMovement()
+        if movementConnection then movementConnection:Disconnect() end
+        movementConnection = RunService.RenderStepped:Connect(function()
+            if tauntPlaying and humanoid.MoveDirection.Magnitude > 0 then
+                if currentTrack then currentTrack:Stop() end
+                tauntPlaying = false
+            end
+        end)
+    end
+
+    monitorMovement()
+
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == TAUNT_KEY then playTaunt() end
+    end)
+    if tauntButton then
+        tauntButton.MouseButton1Click:Connect(playTaunt)
+    end
+
+    humanoid.Died:Connect(function()
+        if currentTrack then currentTrack:Stop() end
+        tauntPlaying = false
+    end)
+
+    -----------------------------------------------------------------
+    -- CUSTOM IDLE SYSTEM (RESPAWN SAFE)
+    -----------------------------------------------------------------
+    local IDLE1 = "17172918855"
+    local IDLE2 = "75752382380063"
+    local IDLE1_DURATION = 10
+    local playingIdle2 = false
+    local idle1StartTime = 0
+
+    -- Disable default animate idle
+    local animate = char:FindFirstChild("Animate")
+    if animate and animate:FindFirstChild("idle") then
+        pcall(function() animate.idle.Enabled = false end)
+    end
+
+    local idle1 = Instance.new("Animation")
+    idle1.AnimationId = "rbxassetid://"..IDLE1
+    local idleTrack1 = animator:LoadAnimation(idle1)
+    idleTrack1.Priority = Enum.AnimationPriority.Idle
+    idleTrack1.Looped = true
+
+    local idle2 = Instance.new("Animation")
+    idle2.AnimationId = "rbxassetid://"..IDLE2
+    local idleTrack2 = animator:LoadAnimation(idle2)
+    idleTrack2.Priority = Enum.AnimationPriority.Idle
+    idleTrack2.Looped = true
+
+    RunService.RenderStepped:Connect(function()
+        if not humanoid.Parent then return end
+        local moving = humanoid.MoveDirection.Magnitude > 0.02
+        if moving then
+            pcall(function()
+                idleTrack1:Stop(0.1)
+                idleTrack2:Stop(0.1)
+                playingIdle2 = false
+            end)
+            return
+        end
+
+        if not idleTrack1.IsPlaying and not playingIdle2 then
+            idleTrack1:Play(0.1)
+            idle1StartTime = tick()
+        end
+
+        if idleTrack1.IsPlaying and (tick() - idle1StartTime) >= IDLE1_DURATION then
+            idleTrack1:Stop(0.1)
+            idleTrack2:Play(0.1)
+            playingIdle2 = true
+        end
+    end)
+end
+
+---------------------------------------------------------------------
+-- INITIALIZATION
+---------------------------------------------------------------------
+local camGui, yesBtn, noBtn = createCameraPrompt()
+
+yesBtn.MouseButton1Click:Connect(function()
+    cameraEnabled = true
+    camGui:Destroy()
+    if player.Character then setupCameraCharacter(player.Character) end
+    player.CharacterAdded:Connect(setupCameraCharacter)
+    setupCameraInput()
+    startCameraLoop()
+end)
+
+noBtn.MouseButton1Cl
